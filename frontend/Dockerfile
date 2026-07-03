@@ -1,20 +1,17 @@
-# Use Node.js LTS version
+# --- Dev image: judges run `docker-compose up -d --build` and hit :5173 ---
 FROM node:20-alpine
 
-# Set working directory
 WORKDIR /app
 
-# Copy package.json and package-lock.json
+# Install deps first so this layer is cached across rebuilds
 COPY package*.json ./
-
-# Install dependencies
 RUN npm install
 
-# Copy all other project files
+# Copy the rest of the source
 COPY . .
 
-# Expose Vite's default port
 EXPOSE 5173
 
-# Start Vite dev server on all network interfaces
-CMD ["npm", "run", "dev", "--", "--host"]
+# vite.config.ts already binds host 0.0.0.0 / port 5173, so this is
+# reachable from outside the container without extra flags here.
+CMD ["npm", "run", "dev"]
