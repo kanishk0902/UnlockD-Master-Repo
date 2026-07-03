@@ -5,6 +5,7 @@ import { TransactionHistory } from './components/TransactionHistory';
 import { LiquidityBar } from './components/LiquidityBar';
 import { AuditConsole } from './components/AuditConsole';
 import { BudgetTracker } from './components/BudgetTracker';
+import { BillSplitter } from './components/BillSplitter';
 import './App.css';
 
 function Dashboard() {
@@ -39,6 +40,7 @@ function Dashboard() {
       <LiquidityBar />
 
       <BudgetTracker />
+      <BillSplitter />
 
       <section className="accounts">
         {state.accounts.map((acc) => (

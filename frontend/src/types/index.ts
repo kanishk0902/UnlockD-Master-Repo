@@ -66,6 +66,16 @@ export interface FinanceState {
   processedRequestIds: string[]; // guards against duplicate/replayed submissions
   auditEvents: AuditEvent[]; // append-only stream of every attempt, incl. suppressed replays
   budgets: Budget[];
+  groups: SplitGroup[];
+  people: Person[];
+}
+
+// A person who can be added to a bill-splitting group. Deliberately separate
+// from Account: accounts are Kanishk's own checking/savings/wallet buckets,
+// whereas group members are the actual friends splitting a bill with him.
+export interface Person {
+  id: string;
+  name: string;
 }
 export interface Budget {
   id: string;
@@ -73,4 +83,50 @@ export interface Budget {
   limit: number;
   spent: number;
   lastResetDate: string; // ISO date string
+}
+export type SplitType =
+  | 'EQUAL'
+  | 'CUSTOM'
+  | 'PERCENTAGE'
+  | 'SHARES';
+
+export interface Split {
+    memberId: string;
+    amount: number;
+    percentage?: number;
+    shares?: number;
+}
+
+export interface GroupExpense {
+  id: string;
+  groupId: string;
+  description: string;
+  amount: number;
+  paidById: string;
+  date: string;
+  splitType: SplitType;
+  splits: Split[];
+}
+
+export interface Settlement {
+  id: string;
+  groupId: string;
+  fromId: string;
+  toId: string;
+  amount: number;
+  status: 'PENDING'
+| 'COMPLETED'
+| 'CANCELLED'
+createdAt: string; // ISO timestamp — when this debt first appeared between this pair
+  interestRate: number; // e.g. 0.10 for 10%
+  interestGraceDays: number; // e.g. 2 — days allowed before interest kicks in
+  interestApplied?: boolean; 
+}
+
+export interface SplitGroup {
+  id: string;
+  name: string;
+  members: string[]; // Array of Account IDs
+  expenses: GroupExpense[];
+  settlements: Settlement[]; // The auto-calculated optimized repayment paths
 }
