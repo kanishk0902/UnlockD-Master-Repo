@@ -7,6 +7,13 @@ export type FailureReason =
   | 'INVALID_AMOUNT'
   | 'ACCOUNT_NOT_FOUND';
 
+  // Add these to your Action type union
+export type Action = 
+  | { type: 'RESET' }
+  | { type: 'TRANSFER_FUNDS'; payload: TransferRequest }
+  | { type: 'UPDATE_BUDGET'; payload: { category: string; amount: number } }
+  | { type: 'RESET_BUDGETS' }; // Add this line!
+
 export interface Account {
   id: string;
   name: string;
@@ -25,8 +32,10 @@ export interface Transaction {
   failureReason?: FailureReason;
   note?: string;
   timestamp: string; // ISO string
+  category?: string; 
   balanceAfterFrom?: number;
   balanceAfterTo?: number;
+  
 }
 
 export interface TransferRequest {
@@ -35,6 +44,7 @@ export interface TransferRequest {
   toAccountId: string;
   amount: number;
   note?: string;
+  category?: string; //
   /** Real SHA-256 hex digest of the request payload, computed client-side
    *  via the Web Crypto API before dispatch. Used only for audit-log
    *  display — the actual idempotency guard runs on requestId. */
@@ -55,4 +65,12 @@ export interface FinanceState {
   transactions: Transaction[];
   processedRequestIds: string[]; // guards against duplicate/replayed submissions
   auditEvents: AuditEvent[]; // append-only stream of every attempt, incl. suppressed replays
+  budgets: Budget[];
+}
+export interface Budget {
+  id: string;
+  category: string; // e.g., 'Food', 'Travel', 'Shopping'
+  limit: number;
+  spent: number;
+  lastResetDate: string; // ISO date string
 }

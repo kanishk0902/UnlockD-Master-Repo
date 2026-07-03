@@ -23,6 +23,7 @@ export function TransferForm() {
   const [toAccountId, setToAccountId] = useState(accounts[1]?.id ?? '');
   const [amountInput, setAmountInput] = useState('');
   const [note, setNote] = useState('');
+  const [category, setCategory] = useState(''); // 🚀 NEW: Budget Category State
   const [latencySimulation, setLatencySimulation] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; message: string } | null>(null);
@@ -45,6 +46,7 @@ export function TransferForm() {
       setFeedback({ kind: 'success', message: `Sent ₹${result.amount.toLocaleString('en-IN')} successfully.` });
       setAmountInput('');
       setNote('');
+      setCategory(''); // 🚀 NEW: Clear category on success
     } else {
       setFeedback({
         kind: 'error',
@@ -88,12 +90,14 @@ export function TransferForm() {
       toAccountId,
       amount,
       note: note.trim() || undefined,
+      category: category || undefined, // 🚀 NEW: Attach category to the payload
     };
     activeRequestId.current = requestId;
     submitStartedAt.current = Date.now();
     setSubmitting(true);
     setFeedback(null);
 
+    // Kept your exact hash generation logic so it doesn't break your latency pipeline
     pendingHash.current = await sha256Hex(
       `${requestId}|${fromAccountId}|${toAccountId}|${amount}|${note}`
     );
@@ -142,6 +146,26 @@ export function TransferForm() {
             style={{ width: '100%', padding: '12px', borderRadius: '6px', backgroundColor: '#1f2937', color: 'white', border: '1px solid #374151', boxSizing: 'border-box', fontFamily: 'monospace' }}
           />
         </div>
+
+        {/* 🚀 NEW: Budget Category Dropdown injected into your original layout */}
+        {state.budgets && state.budgets.length > 0 && (
+          <div>
+            <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', color: '#94a3b8' }}>Budget Category (Optional)</label>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              disabled={submitting}
+              style={{ width: '100%', padding: '12px', borderRadius: '6px', backgroundColor: '#1f2937', color: 'white', border: '1px solid #374151', fontFamily: 'monospace' }}
+            >
+              <option value="">None (Don't track)</option>
+              {state.budgets.map((b) => (
+                <option key={b.id} value={b.category}>
+                  {b.category}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div>
           <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', color: '#94a3b8' }}>Note (optional)</label>

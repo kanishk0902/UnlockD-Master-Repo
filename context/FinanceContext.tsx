@@ -5,14 +5,14 @@ import { generateId } from '../utils/id';
 import { formatCurrency } from '../utils/money';
 
 const MAX_AUDIT_EVENTS = 200;
+
 const STORAGE_KEY = 'unlockd_finance_state_v1';
+// Two identical transfers (same from/to/amount) within this window are
+// treated as accidental duplicates (e.g. a user double-tapping "Send").
 const DUPLICATE_WINDOW_MS = 5000;
 
 type Action =
   | { type: 'TRANSFER_FUNDS'; payload: TransferRequest }
-  | { type: 'UPDATE_BUDGET'; payload: { category: string; amount: number } }
-  | { type: 'RESET_BUDGETS' }
-  | { type: 'ADD_BUDGET'; payload: { category: string; limit: number } }
   | { type: 'RESET' };
 
 function loadInitialState(): FinanceState {
@@ -30,7 +30,6 @@ function loadInitialState(): FinanceState {
     transactions: [],
     processedRequestIds: [],
     auditEvents: [],
-    budgets: [], // 🚀 Starts empty so you can add custom budgets via the UI
   };
 }
 
@@ -50,6 +49,15 @@ function pushAudit(state: FinanceState, events: AuditEvent[]): AuditEvent[] {
     : combined;
 }
 
+/**
+ * The entire transfer — validation, overdraft check, duplicate check, and
+ * both balance mutations — happens inside this single reducer function,
+ * which runs synchronously against one immutable snapshot of prior state.
+ * React never applies a partial update from this function, so from the
+ * rest of the app's point of view the transfer is atomic: any concurrent
+ * dispatches are queued and applied one-at-a-time against the result of
+ * this one, never interleaved with it.
+ */
 function financeReducer(state: FinanceState, action: Action): FinanceState {
   switch (action.type) {
     case 'RESET':
@@ -58,50 +66,10 @@ function financeReducer(state: FinanceState, action: Action): FinanceState {
         transactions: [],
         processedRequestIds: [],
         auditEvents: [],
-        budgets: [],
       };
-
-    case 'ADD_BUDGET': {
-      const { category, limit } = action.payload;
-      return {
-        ...state,
-        budgets: [
-          ...state.budgets,
-          { 
-            id: generateId('bgt'), 
-            category, 
-            limit, 
-            spent: 0, 
-            lastResetDate: new Date().toISOString() 
-          }
-        ]
-      };
-    }
-
-    case 'UPDATE_BUDGET': {
-      const { category, amount } = action.payload;
-      return {
-        ...state,
-        budgets: state.budgets.map(b => 
-          b.category === category ? { ...b, spent: b.spent + amount } : b
-        )
-      };
-    }
-
-    case 'RESET_BUDGETS': {
-      return {
-        ...state,
-        budgets: state.budgets.map(b => ({ 
-          ...b, 
-          spent: 0, 
-          lastResetDate: new Date().toISOString() 
-        }))
-      };
-    }
 
     case 'TRANSFER_FUNDS': {
-      // 🚀 FIXED: Added "category" extraction here!
-      const { requestId, fromAccountId, toAccountId, amount, note, requestHash, category } = action.payload;
+      const { requestId, fromAccountId, toAccountId, amount, note, requestHash } = action.payload;
       const timestamp = new Date().toISOString();
       const shortId = requestId.slice(-8);
       const hashLabel = requestHash ? requestHash.slice(0, 32) + '…' : 'n/a';
@@ -121,6 +89,12 @@ function financeReducer(state: FinanceState, action: Action): FinanceState {
       const startEvent = makeAuditEvent('info', `Initializing atomic transfer pipeline… req=${shortId}`);
       const signEvent = makeAuditEvent('sign', `Generating SHA-256 idempotency token: ${hashLabel}`);
 
+      // 1. Idempotency guard: exact same request replayed (double network
+      //    submit, spam-clicking during a slow request, etc.) is dropped
+      //    without creating a duplicate ledger entry — the ledger only
+      //    ever records the one canonical outcome for a given requestId.
+      //    The attempt is still recorded in the audit stream so it's
+      //    visible that the system actively caught and rejected it.
       if (state.processedRequestIds.includes(requestId)) {
         return {
           ...state,
@@ -131,6 +105,7 @@ function financeReducer(state: FinanceState, action: Action): FinanceState {
         };
       }
 
+      // 2. Structural validation.
       const fromAccount = state.accounts.find((a) => a.id === fromAccountId);
       const toAccount = state.accounts.find((a) => a.id === toAccountId);
 
@@ -161,6 +136,9 @@ function financeReducer(state: FinanceState, action: Action): FinanceState {
         };
       }
 
+      // 3. Content-based duplicate detection: same from/to/amount
+      //    completed moments ago, likely an accidental resubmission
+      //    rather than a deliberate second transfer.
       const recentDuplicate = state.transactions.find((t) => {
         if (t.status !== 'completed') return false;
         if (t.fromAccountId !== fromAccountId) return false;
@@ -183,6 +161,7 @@ function financeReducer(state: FinanceState, action: Action): FinanceState {
         };
       }
 
+      // 4. Overdraft protection.
       if (fromAccount.balance < amount) {
         return {
           ...state,
@@ -196,6 +175,8 @@ function financeReducer(state: FinanceState, action: Action): FinanceState {
         };
       }
 
+      // 5. All checks passed — apply both balance mutations and the
+      //    completed ledger entry together, in the same state transition.
       const nextAccounts: Account[] = state.accounts.map((acc) => {
         if (acc.id === fromAccountId) return { ...acc, balance: acc.balance - amount };
         if (acc.id === toAccountId) return { ...acc, balance: acc.balance + amount };
@@ -205,17 +186,10 @@ function financeReducer(state: FinanceState, action: Action): FinanceState {
       const balanceAfterFrom = nextAccounts.find((a) => a.id === fromAccountId)!.balance;
       const balanceAfterTo = nextAccounts.find((a) => a.id === toAccountId)!.balance;
 
-      // 🚀 FIXED: Now explicitly relies on the UI dropdown category, NOT the note!
-      const nextBudgets = state.budgets.map(b => 
-        (category && category.toLowerCase() === b.category.toLowerCase())
-          ? { ...b, spent: b.spent + amount }
-          : b
-      );
-
       return {
         accounts: nextAccounts,
         transactions: [
-          buildTxn({ status: 'completed', failureReason: undefined, balanceAfterFrom, balanceAfterTo, category }),
+          buildTxn({ status: 'completed', failureReason: undefined, balanceAfterFrom, balanceAfterTo }),
           ...state.transactions,
         ],
         processedRequestIds: [...state.processedRequestIds, requestId],
@@ -224,7 +198,6 @@ function financeReducer(state: FinanceState, action: Action): FinanceState {
           signEvent,
           makeAuditEvent('ok', `Transfer settled — ${formatCurrency(amount)} moved ${fromAccountId} → ${toAccountId}. req=${shortId}. Both balances committed atomically.`),
         ]),
-        budgets: nextBudgets,
       };
     }
 
@@ -237,9 +210,6 @@ interface FinanceContextValue {
   state: FinanceState;
   transfer: (req: TransferRequest) => void;
   reset: () => void;
-  updateBudget: (category: string, amount: number) => void;
-  resetBudgets: () => void;
-  addBudget: (category: string, limit: number) => void;
 }
 
 const FinanceContext = createContext<FinanceContextValue | undefined>(undefined);
@@ -253,16 +223,9 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
 
   const transfer = (req: TransferRequest) => dispatch({ type: 'TRANSFER_FUNDS', payload: req });
   const reset = () => dispatch({ type: 'RESET' });
-  const updateBudget = (category: string, amount: number) => {
-    dispatch({ type: 'UPDATE_BUDGET', payload: { category, amount } });
-  };
-  const resetBudgets = () => dispatch({ type: 'RESET_BUDGETS' });
-  const addBudget = (category: string, limit: number) => {
-    dispatch({ type: 'ADD_BUDGET', payload: { category, limit } });
-  };
 
   return (
-    <FinanceContext.Provider value={{ state, transfer, reset, updateBudget, resetBudgets, addBudget }}>
+    <FinanceContext.Provider value={{ state, transfer, reset }}>
       {children}
     </FinanceContext.Provider>
   );

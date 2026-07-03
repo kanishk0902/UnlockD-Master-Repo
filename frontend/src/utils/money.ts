@@ -9,7 +9,7 @@ export function rupeesToPaise(rupees: number): number {
 }
 
 export function paiseToRupees(paise: number): number {
-  return paise / 100;
+  return paise ;
 }
 
 export function formatCurrency(paise: number): string {
