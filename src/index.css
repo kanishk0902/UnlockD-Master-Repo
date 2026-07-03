@@ -1,0 +1,37 @@
+/* Core Browser Reset & Root Config */
+:root {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  line-height: 1.5;
+  font-weight: 400;
+  
+  /* Force dark mode behavior globally */
+  color-scheme: dark;
+  background-color: #0b0f19;
+  color: #f8fafc;
+}
+
+/* Ensure padding doesn't break our grids */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Remove default link outlines */
+a {
+  text-decoration: inherit;
+  color: #10b981;
+}
+
+/* Make inputs look consistent */
+input, select, button {
+  font-family: inherit;
+  outline: none;
+}
