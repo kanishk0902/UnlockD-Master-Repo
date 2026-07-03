@@ -1,59 +1,63 @@
+import React from 'react';
 import { FinanceProvider, useFinance } from './context/FinanceContext';
+
+// Components
 import { AccountCard } from './components/AccountCard';
 import { TransferForm } from './components/TransferForm';
 import { TransactionHistory } from './components/TransactionHistory';
 import { LiquidityBar } from './components/LiquidityBar';
-import { AuditConsole } from './components/AuditConsole';
 import { BudgetTracker } from './components/BudgetTracker';
 import { BillSplitter } from './components/BillSplitter';
+import { StatementImporter } from './components/StatementImporter';
+import { AnalyticsEngine } from './components/AnalyticsEngine';
+import { AuditConsole } from './components/AuditConsole';
+
 import './App.css';
 
 function Dashboard() {
   const { state, reset } = useFinance();
 
-  // 🚀 NEW: Dynamically fetches the current system date for the UI
   const today = new Date().toLocaleDateString('en-IN', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
   });
 
   return (
-    <div className="app-shell">
-      <header className="app-header">
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' }}>
-            <p className="app-header__eyebrow" style={{ margin: 0 }}>Unlock'D · Round 1</p>
-            {/* 🚀 NEW: The Ledger Date Badge */}
-            <span style={{ fontSize: '11px', color: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
-              Ledger Date: {today}
-            </span>
+    <div style={{ minHeight: '100vh', backgroundColor: '#0b0f19', color: '#f8fafc', padding: '24px', maxWidth: '800px', margin: '0 auto', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+      
+      {/* HEADER */}
+      <header style={{ borderBottom: '1px solid #1e293b', paddingBottom: '20px', marginBottom: '24px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <p style={{ color: '#94a3b8', fontSize: '12px', textTransform: 'uppercase', margin: '0 0 8px 0' }}>Unlock'D · Production Build</p>
+            <h1 style={{ margin: 0, fontSize: '28px' }}>Financial Control Center</h1>
+            <p style={{ margin: '4px 0 0 0', color: '#64748b', fontSize: '14px' }}>{today}</p>
           </div>
-          <h1 style={{ marginTop: '8px' }}>Transactions</h1>
+          <button onClick={reset} style={{ padding: '8px 16px', backgroundColor: 'transparent', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}>
+            Factory Reset
+          </button>
         </div>
-        <button className="app-header__reset" onClick={reset} type="button">
-          Reset demo data
-        </button>
       </header>
 
-      <LiquidityBar />
+      {/* STACKED CONTENT: The Vertical Flow */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+        <LiquidityBar />
+        
+        <div style={{ display: 'flex', gap: '16px', overflowX: 'auto', paddingBottom: '8px' }}>
+          {state.accounts.map((acc) => (
+            <div key={acc.id} style={{ minWidth: '280px' }}>
+              <AccountCard account={acc} />
+            </div>
+          ))}
+        </div>
 
-      <BudgetTracker />
-      <BillSplitter />
-
-      <section className="accounts">
-        {state.accounts.map((acc) => (
-          <AccountCard key={acc.id} account={acc} />
-        ))}
-      </section>
-
-      <main className="app-main">
+        <BudgetTracker />
+        <BillSplitter />
+        <StatementImporter />
+        <AnalyticsEngine />
         <TransferForm />
         <TransactionHistory />
-      </main>
-
-      <AuditConsole />
+        <AuditConsole />
+      </div>
     </div>
   );
 }

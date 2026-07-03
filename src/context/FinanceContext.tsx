@@ -47,6 +47,7 @@ type Action =
   | { type: 'MARK_SETTLED'; payload: { groupId: string; settlementId: string } }
   | { type: 'AGE_SETTLEMENTS'; payload: { groupId: string; days: number } }
   | { type: 'UPDATE_TRANSACTION'; payload: { id: string; category?: string; note?: string; merchant?: string } }
+  | { type: 'IMPORT_TRANSACTIONS'; payload: Transaction[] }
   | { type: 'RESET' };
 
 function loadInitialState(): FinanceState {
@@ -201,10 +202,6 @@ function financeReducer(state: FinanceState, action: Action): FinanceState {
     }
 
     case 'AGE_SETTLEMENTS': {
-      // Demo-only: pushes every PENDING settlement's createdAt back in time
-      // so the 10% late-interest rule can be shown live without waiting for
-      // real days to pass. Nothing else about the settlement changes —
-      // getEffectiveSettlement() picks up the new age automatically.
       const { groupId, days } = action.payload;
       const shiftMs = days * 24 * 60 * 60 * 1000;
       const updatedGroups = state.groups.map(g => {
@@ -226,8 +223,6 @@ function financeReducer(state: FinanceState, action: Action): FinanceState {
       const oldCategory = existing.category;
       const nextCategory = category !== undefined ? category : oldCategory;
 
-      // Keep budget "spent" totals honest when a transaction is recategorized:
-      // remove the amount from the old category's budget and add it to the new one.
       let nextBudgets = state.budgets;
       if (category !== undefined && category !== oldCategory) {
         nextBudgets = state.budgets.map(b => {
@@ -255,8 +250,18 @@ function financeReducer(state: FinanceState, action: Action): FinanceState {
       return { ...state, transactions: nextTransactions, budgets: nextBudgets };
     }
 
+    case 'IMPORT_TRANSACTIONS': {
+      const newTxns = action.payload.filter(
+        newTx => !state.transactions.some(existingTx => existingTx.id === newTx.id)
+      );
+      return { 
+        ...state, 
+        transactions: [...newTxns, ...state.transactions] 
+      };
+    }
+
     case 'TRANSFER_FUNDS': {
-      const { requestId, fromAccountId, toAccountId, amount, note, requestHash, category } = action.payload;
+      const { requestId, fromAccountId, toAccountId, amount, note, category } = action.payload;
       const timestamp = new Date().toISOString();
       if (state.processedRequestIds.includes(requestId)) return state;
 
@@ -305,6 +310,7 @@ interface FinanceContextValue {
   markSettled: (groupId: string, settlementId: string) => void;
   ageSettlements: (groupId: string, days: number) => void;
   updateTransaction: (id: string, updates: { category?: string; note?: string; merchant?: string }) => void;
+  importTransactions: (transactions: Transaction[]) => void;
 }
 
 const FinanceContext = createContext<FinanceContextValue | undefined>(undefined);
@@ -314,7 +320,31 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }, [state]);
 
-  const transfer = (req: TransferRequest) => dispatch({ type: 'TRANSFER_FUNDS', payload: req });
+  const transfer = async (req: TransferRequest) => {
+    try {
+      const response = await fetch('http://localhost:5001/api/transactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transaction: {
+            id: req.requestId,
+            timestamp: new Date().toISOString(),
+            amount: req.amount,
+            note: req.note,
+            category: req.category
+          }
+        })
+      });
+      
+      if (response.ok) {
+        console.log("Network sync check: SUCCESS. Logged to server.js schema.");
+      }
+    } catch (err) {
+      console.error("Network sync check: FAILED. Operating in local failover mode.", err);
+    }
+
+    dispatch({ type: 'TRANSFER_FUNDS', payload: req });
+  };
   const reset = () => dispatch({ type: 'RESET' });
   const updateBudget = (cat: string, amt: number) => dispatch({ type: 'UPDATE_BUDGET', payload: { category: cat, amount: amt } });
   const resetBudgets = () => dispatch({ type: 'RESET_BUDGETS' });
@@ -325,9 +355,10 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   const markSettled = (groupId: string, settlementId: string) => dispatch({ type: 'MARK_SETTLED', payload: { groupId, settlementId } });
   const ageSettlements = (groupId: string, days: number) => dispatch({ type: 'AGE_SETTLEMENTS', payload: { groupId, days } });
   const updateTransaction = (id: string, updates: { category?: string; note?: string; merchant?: string }) => dispatch({ type: 'UPDATE_TRANSACTION', payload: { id, ...updates } });
+  const importTransactions = (transactions: Transaction[]) => dispatch({ type: 'IMPORT_TRANSACTIONS', payload: transactions });
 
   return (
-    <FinanceContext.Provider value={{ state, transfer, reset, updateBudget, resetBudgets, addBudget, deleteBudget, createGroup, addGroupExpense, markSettled, ageSettlements, updateTransaction }}>
+    <FinanceContext.Provider value={{ state, transfer, reset, updateBudget, resetBudgets, addBudget, deleteBudget, createGroup, addGroupExpense, markSettled, ageSettlements, updateTransaction, importTransactions }}>
       {children}
     </FinanceContext.Provider>
   );

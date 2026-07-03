@@ -1,0 +1,25 @@
+{
+  "transactions": [
+    {
+      "id": "req_26337fb2-bc8a-49b4-ba3b-2390855efc38",
+      "timestamp": "2026-07-03T16:08:35.663Z",
+      "amount": 2000,
+      "category": "meds"
+    },
+    {
+      "id": "req_8ba1ab4a-629c-4d73-adab-2432dc2bdec1",
+      "timestamp": "2026-07-03T16:07:53.287Z",
+      "amount": 500
+    },
+    {
+      "id": "req_e69ae944-87c5-4f41-a75e-b7f192f294eb",
+      "timestamp": "2026-07-03T16:07:03.786Z",
+      "amount": 500
+    },
+    {
+      "id": "req_9c46fd2c-6fcb-4f91-a525-360b295c05fa",
+      "timestamp": "2026-07-03T16:06:15.760Z",
+      "amount": 5000
+    }
+  ]
+}
