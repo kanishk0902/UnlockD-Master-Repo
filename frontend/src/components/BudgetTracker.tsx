@@ -3,29 +3,27 @@ import { useFinance } from '../context/FinanceContext';
 import { formatCurrency } from '../utils/money';
 
 export function BudgetTracker() {
-  const { state, addBudget, resetBudgets } = useFinance();
+  const { state, addBudget, resetBudgets, deleteBudget } = useFinance();
   const [newCategory, setNewCategory] = useState('');
   const [newLimit, setNewLimit] = useState('');
-  // 🚀 THE AUTO-RESET WATCHER
+
+  // 🚀 Auto-Reset Watcher
   useEffect(() => {
     if (state.budgets.length === 0) return;
 
     const currentMonth = new Date().getMonth();
-    
-    // Check the first budget's timestamp to see what month it currently thinks it is
     const lastResetDate = new Date(state.budgets[0].lastResetDate);
     const lastResetMonth = lastResetDate.getMonth();
 
-    // If the real-world month doesn't match the budget's month, wipe the slate clean!
     if (currentMonth !== lastResetMonth) {
       console.log("New month detected! Resetting all budgets to zero.");
       resetBudgets();
     }
-  }, [state.budgets]); // It checks this every time the budgets change or the app loads
+  }, [state.budgets, resetBudgets]);
 
   const handleAddBudget = (e: React.FormEvent) => {
     e.preventDefault();
-    const limitAmount = parseFloat(newLimit) ; // Convert standard input to Paise for backend
+    const limitAmount = parseFloat(newLimit); // Strictly Rupees
     if (newCategory.trim() && limitAmount > 0) {
       addBudget(newCategory.trim(), limitAmount);
       setNewCategory('');
@@ -39,7 +37,6 @@ export function BudgetTracker() {
         <h3 style={{ margin: '0', fontSize: '18px', fontWeight: 'bold' }}>Smart Budgeting</h3>
       </div>
 
-      {/* 🚀 THE NEW USER CONTROLS */}
       <form onSubmit={handleAddBudget} style={{ display: 'flex', gap: '12px', marginBottom: '24px', paddingBottom: '24px', borderBottom: '1px solid #1e293b' }}>
         <input 
           type="text" 
@@ -81,12 +78,21 @@ export function BudgetTracker() {
 
             return (
               <div key={budget.id} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '15px' }}>
                   <span style={{ fontWeight: 'bold', color: '#f8fafc' }}>{budget.category}</span>
-                  <div style={{ textAlign: 'right' }}>
+                  
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                     <span style={{ color: '#94a3b8' }}>
                       {formatCurrency(budget.spent)} / {formatCurrency(budget.limit)}
                     </span>
+                    <button 
+                      onClick={() => deleteBudget(budget.id)}
+                      style={{ background: 'transparent', border: 'none', color: '#ef4444', fontSize: '16px', cursor: 'pointer', padding: '0 4px', fontWeight: 'bold' }}
+                      title="Delete Budget"
+                      type="button"
+                    >
+                      ✕
+                    </button>
                   </div>
                 </div>
 

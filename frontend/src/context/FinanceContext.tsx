@@ -13,6 +13,7 @@ type Action =
   | { type: 'UPDATE_BUDGET'; payload: { category: string; amount: number } }
   | { type: 'RESET_BUDGETS' }
   | { type: 'ADD_BUDGET'; payload: { category: string; limit: number } }
+  | { type: 'DELETE_BUDGET'; payload: { id: string } }
   | { type: 'RESET' };
 
 function loadInitialState(): FinanceState {
@@ -30,7 +31,7 @@ function loadInitialState(): FinanceState {
     transactions: [],
     processedRequestIds: [],
     auditEvents: [],
-    budgets: [], // 🚀 Starts empty so you can add custom budgets via the UI
+    budgets: [], 
   };
 }
 
@@ -78,6 +79,13 @@ function financeReducer(state: FinanceState, action: Action): FinanceState {
       };
     }
 
+    case 'DELETE_BUDGET': {
+      return {
+        ...state,
+        budgets: state.budgets.filter(b => b.id !== action.payload.id)
+      };
+    }
+
     case 'UPDATE_BUDGET': {
       const { category, amount } = action.payload;
       return {
@@ -100,7 +108,6 @@ function financeReducer(state: FinanceState, action: Action): FinanceState {
     }
 
     case 'TRANSFER_FUNDS': {
-      // 🚀 FIXED: Added "category" extraction here!
       const { requestId, fromAccountId, toAccountId, amount, note, requestHash, category } = action.payload;
       const timestamp = new Date().toISOString();
       const shortId = requestId.slice(-8);
@@ -157,7 +164,7 @@ function financeReducer(state: FinanceState, action: Action): FinanceState {
           ...state,
           transactions: [buildTxn({ failureReason: 'INVALID_AMOUNT' }), ...state.transactions],
           processedRequestIds: [...state.processedRequestIds, requestId],
-          auditEvents: pushAudit(state, [startEvent, makeAuditEvent('error', `Amount validation failed for req=${shortId}. Non-positive or non-integer paise value.`)]),
+          auditEvents: pushAudit(state, [startEvent, makeAuditEvent('error', `Amount validation failed for req=${shortId}. Non-positive or non-integer value.`)]),
         };
       }
 
@@ -205,7 +212,6 @@ function financeReducer(state: FinanceState, action: Action): FinanceState {
       const balanceAfterFrom = nextAccounts.find((a) => a.id === fromAccountId)!.balance;
       const balanceAfterTo = nextAccounts.find((a) => a.id === toAccountId)!.balance;
 
-      // 🚀 FIXED: Now explicitly relies on the UI dropdown category, NOT the note!
       const nextBudgets = state.budgets.map(b => 
         (category && category.toLowerCase() === b.category.toLowerCase())
           ? { ...b, spent: b.spent + amount }
@@ -240,6 +246,7 @@ interface FinanceContextValue {
   updateBudget: (category: string, amount: number) => void;
   resetBudgets: () => void;
   addBudget: (category: string, limit: number) => void;
+  deleteBudget: (id: string) => void;
 }
 
 const FinanceContext = createContext<FinanceContextValue | undefined>(undefined);
@@ -260,9 +267,12 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   const addBudget = (category: string, limit: number) => {
     dispatch({ type: 'ADD_BUDGET', payload: { category, limit } });
   };
+  const deleteBudget = (id: string) => {
+    dispatch({ type: 'DELETE_BUDGET', payload: { id } });
+  };
 
   return (
-    <FinanceContext.Provider value={{ state, transfer, reset, updateBudget, resetBudgets, addBudget }}>
+    <FinanceContext.Provider value={{ state, transfer, reset, updateBudget, resetBudgets, addBudget, deleteBudget }}>
       {children}
     </FinanceContext.Provider>
   );
