@@ -5,14 +5,19 @@ import type { Transaction } from '../types';
 export function AuditConsole() {
   const { state } = useFinance();
 
-  // We use 'as any' here to force TypeScript to let the comparison through, 
-  // silencing the ts(2367) overlap error instantly.
+  // Safely converting statuses to lowercase to prevent case-mismatch bugs
   const totalSettled = state.transactions
-    .filter((t: Transaction) => (t.status as any) === 'COMPLETED' || (t.status as any) === 'SUCCESS')
+    .filter((t: Transaction) => {
+      const s = String(t.status).toLowerCase();
+      return s === 'completed' || s === 'success';
+    })
     .reduce((sum: number, t: Transaction) => sum + t.amount, 0);
 
   const interceptedAttacks = state.transactions
-    .filter((t: Transaction) => (t.status as any) === 'FAILED' || (t.status as any) === 'REJECTED').length;
+    .filter((t: Transaction) => {
+      const s = String(t.status).toLowerCase();
+      return s === 'failed' || s === 'rejected' || s === 'dropped';
+    }).length;
 
   return (
     <div style={{ backgroundColor: '#111827', border: '1px solid #1e293b', padding: '24px', borderRadius: '12px' }}>

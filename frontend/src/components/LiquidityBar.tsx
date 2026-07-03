@@ -1,49 +1,45 @@
+import React from 'react';
 import { useFinance } from '../context/FinanceContext';
-import { formatCurrency } from '../utils/money';
-
-const SEGMENT_COLORS = ['#34d399', '#60a5fa', '#f2a65a', '#c084fc', '#f472b6'];
 
 export function LiquidityBar() {
   const { state } = useFinance();
-  const { accounts } = state;
-  const total = accounts.reduce((sum, a) => sum + a.balance, 0);
+
+  // Dynamically calculate the real total balance
+  const totalBalance = state.accounts.reduce((sum, acc) => sum + acc.balance, 0);
 
   return (
-    <section className="liquidity">
-      <div className="liquidity__header">
-        <span className="liquidity__title">Liquidity Pool Distribution</span>
-        <span className="liquidity__total">{formatCurrency(total)} total</span>
+    <div style={{ marginBottom: '32px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '14px' }}>
+        <span style={{ color: '#94a3b8' }}>Liquidity Pool Distribution</span>
+        <span style={{ fontWeight: 'bold' }}>{"₹"}{totalBalance.toLocaleString('en-IN')} total</span>
       </div>
+      
+      <div style={{ display: 'flex', gap: '2px', height: '8px', borderRadius: '4px', overflow: 'hidden' }}>
+        {state.accounts.map((acc, i) => {
+          const percentage = totalBalance > 0 ? (acc.balance / totalBalance) * 100 : 0;
+          const colors = ['#10b981', '#3b82f6', '#f59e0b', '#8b5cf6'];
+          const color = colors[i % colors.length];
 
-      <div className="liquidity__bar" role="img" aria-label="Balance distribution across accounts">
-        {accounts.map((acc, i) => {
-          const pct = total > 0 ? (acc.balance / total) * 100 : 0;
           return (
             <div
               key={acc.id}
-              className="liquidity__segment"
-              style={{ width: `${pct}%`, background: SEGMENT_COLORS[i % SEGMENT_COLORS.length] }}
-              title={`${acc.name}: ${pct.toFixed(1)}%`}
+              style={{ width: `${percentage}%`, backgroundColor: color }}
+              title={`${acc.name}: ${percentage.toFixed(1)}%`}
             />
           );
         })}
       </div>
 
-      <div className="liquidity__legend">
-        {accounts.map((acc, i) => {
-          const pct = total > 0 ? (acc.balance / total) * 100 : 0;
+      <div style={{ display: 'flex', gap: '16px', marginTop: '12px', fontSize: '12px', color: '#94a3b8' }}>
+        {state.accounts.map((acc, i) => {
+          const percentage = totalBalance > 0 ? (acc.balance / totalBalance) * 100 : 0;
           return (
-            <div className="liquidity__legend-item" key={acc.id}>
-              <span
-                className="liquidity__dot"
-                style={{ background: SEGMENT_COLORS[i % SEGMENT_COLORS.length] }}
-              />
-              <span className="liquidity__legend-name">{acc.name}</span>
-              <span className="liquidity__legend-pct">{pct.toFixed(1)}%</span>
-            </div>
+            <span key={acc.id}>
+              {acc.name} <strong style={{ color: '#f8fafc' }}>{percentage.toFixed(1)}%</strong>
+            </span>
           );
         })}
       </div>
-    </section>
+    </div>
   );
 }

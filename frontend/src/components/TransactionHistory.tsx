@@ -1,57 +1,45 @@
+import React from 'react';
 import { useFinance } from '../context/FinanceContext';
-import { formatCurrency, formatTimestamp } from '../utils/money';
-import { REASON_COPY } from './TransferForm';
-
-const STATUS_LABEL: Record<string, string> = {
-  completed: 'Completed',
-  failed: 'Failed',
-  reversed: 'Reversed',
-};
 
 export function TransactionHistory() {
   const { state } = useFinance();
-  const { transactions, accounts } = state;
 
-  const accountName = (id: string) => accounts.find((a) => a.id === id)?.name ?? 'Unknown account';
-
-  if (transactions.length === 0) {
-    return (
-      <div className="history">
-        <h2>Transaction history</h2>
-        <p className="history__empty">No transfers yet. Send money to see it show up here.</p>
-      </div>
-    );
-  }
+  // Show newest transactions at the top
+  const sortedTxs = [...state.transactions].reverse();
 
   return (
-    <div className="history">
-      <h2>Transaction history</h2>
-      <div className="history__table" role="table">
-        <div className="history__row history__row--head" role="row">
-          <span role="columnheader">Status</span>
-          <span role="columnheader">From</span>
-          <span role="columnheader">To</span>
-          <span role="columnheader">Amount</span>
-          <span role="columnheader">Timestamp</span>
-          <span role="columnheader">Detail</span>
+    <div style={{ backgroundColor: '#111827', border: '1px solid #1e293b', padding: '24px', borderRadius: '12px' }}>
+      <h3 style={{ margin: '0 0 20px 0', fontSize: '18px', fontWeight: 'bold' }}>Transaction history</h3>
+      
+      {sortedTxs.length === 0 ? (
+        <p style={{ color: '#94a3b8', fontSize: '14px' }}>No transfers yet. Send money to see it show up here.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '400px', overflowY: 'auto' }}>
+          {sortedTxs.map(tx => {
+            const statusStr = String(tx.status).toLowerCase();
+            const isSuccess = statusStr === 'completed' || statusStr === 'success';
+            
+            return (
+              <div key={tx.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px', backgroundColor: '#0b0f19', borderRadius: '8px', border: '1px solid #1e293b' }}>
+                <div>
+                  <p style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 'bold' }}>Transfer</p>
+                  <p style={{ margin: 0, fontSize: '12px', color: '#94a3b8' }}>
+                    Status: <span style={{ color: isSuccess ? '#10b981' : '#ef4444', textTransform: 'uppercase' }}>{tx.status}</span>
+                  </p>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <p style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 'bold', color: '#f8fafc' }}>
+                    {"₹"}{tx.amount.toLocaleString('en-IN')}
+                  </p>
+                  <p style={{ margin: 0, fontSize: '11px', color: '#64748b' }}>
+                    {new Date(tx.timestamp).toLocaleTimeString()}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
         </div>
-        {transactions.map((t) => (
-          <div className="history__row" role="row" key={t.id}>
-            <span role="cell">
-              <span className={`badge badge--${t.status}`}>{STATUS_LABEL[t.status]}</span>
-            </span>
-            <span role="cell">{accountName(t.fromAccountId)}</span>
-            <span role="cell">{accountName(t.toAccountId)}</span>
-            <span role="cell" className="history__amount">{formatCurrency(t.amount)}</span>
-            <span role="cell" className="history__time">{formatTimestamp(t.timestamp)}</span>
-            <span role="cell" className="history__detail">
-              {t.status === 'failed'
-                ? REASON_COPY[t.failureReason ?? ''] ?? '—'
-                : t.note || '—'}
-            </span>
-          </div>
-        ))}
-      </div>
+      )}
     </div>
   );
 }
