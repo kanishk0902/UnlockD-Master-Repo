@@ -12,7 +12,9 @@ export type Action =
   | { type: 'RESET' }
   | { type: 'TRANSFER_FUNDS'; payload: TransferRequest }
   | { type: 'UPDATE_BUDGET'; payload: { category: string; amount: number } }
-  | { type: 'RESET_BUDGETS' }; // Add this line!
+  | { type: 'RESET_BUDGETS' } // Add this line!
+  | { type: 'IMPORT_TRANSACTIONS'; payload: Transaction[] };
+  
 
 export interface Account {
   id: string;

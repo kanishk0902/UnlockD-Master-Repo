@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useEffect, useReducer } from 'react';
 import type { Account, AuditEvent, AuditLevel, FinanceState, Transaction, TransferRequest, SplitGroup, GroupExpense, Settlement, SplitType } from '../types';
-
 import { generateId } from '../utils/id';
 import { formatCurrency } from '../utils/money';
 import { seedAccounts, seedPeople } from '../data/seed';
@@ -9,19 +8,11 @@ const MAX_AUDIT_EVENTS = 200;
 const STORAGE_KEY = 'unlockd_finance_state_v1';
 const DUPLICATE_WINDOW_MS = 5000;
 
-// Late-settlement interest: if a debt between two people sits PENDING for
-// longer than the grace period, the creditor is entitled to a one-time 10%
-// penalty on top of what's owed.
+// Late-settlement interest
 export const SETTLEMENT_INTEREST_RATE = 0.10;
 export const SETTLEMENT_GRACE_DAYS = 2;
 const GRACE_MS = SETTLEMENT_GRACE_DAYS * 24 * 60 * 60 * 1000;
 
-/**
- * Returns the amount actually owed on a settlement right now, including any
- * accrued late interest. This is a pure read-time calculation — nothing is
- * mutated — so the UI always shows a live, correct number without needing a
- * background timer or periodic dispatch.
- */
 export function getEffectiveSettlement(settlement: Settlement): {
   amount: number;
   isOverdue: boolean;
@@ -47,6 +38,7 @@ type Action =
   | { type: 'MARK_SETTLED'; payload: { groupId: string; settlementId: string } }
   | { type: 'AGE_SETTLEMENTS'; payload: { groupId: string; days: number } }
   | { type: 'UPDATE_TRANSACTION'; payload: { id: string; category?: string; note?: string; merchant?: string } }
+  | { type: 'IMPORT_TRANSACTIONS'; payload: Transaction[] }
   | { type: 'RESET' };
 
 function loadInitialState(): FinanceState {
@@ -87,10 +79,6 @@ function optimizeSettlements(groupId: string, expenses: GroupExpense[], previous
   const debtors = Object.keys(balances).filter(id => balances[id] <= -0.01).map(id => ({ id, amount: Math.abs(balances[id]) })).sort((a, b) => b.amount - a.amount);
   const creditors = Object.keys(balances).filter(id => balances[id] >= 0.01).map(id => ({ id, amount: balances[id] })).sort((a, b) => b.amount - a.amount);
 
-  // Debts between the same two people should keep accruing toward the same
-  // due date across expense additions, rather than resetting the interest
-  // clock every time someone adds a new group expense. We key on the
-  // unordered pair so it survives even if who-owes-whom flips.
   const priorCreatedAt: Record<string, string> = {};
   previousSettlements.forEach(s => {
     if (s.status !== 'PENDING') return;
@@ -201,10 +189,6 @@ function financeReducer(state: FinanceState, action: Action): FinanceState {
     }
 
     case 'AGE_SETTLEMENTS': {
-      // Demo-only: pushes every PENDING settlement's createdAt back in time
-      // so the 10% late-interest rule can be shown live without waiting for
-      // real days to pass. Nothing else about the settlement changes —
-      // getEffectiveSettlement() picks up the new age automatically.
       const { groupId, days } = action.payload;
       const shiftMs = days * 24 * 60 * 60 * 1000;
       const updatedGroups = state.groups.map(g => {
@@ -226,8 +210,6 @@ function financeReducer(state: FinanceState, action: Action): FinanceState {
       const oldCategory = existing.category;
       const nextCategory = category !== undefined ? category : oldCategory;
 
-      // Keep budget "spent" totals honest when a transaction is recategorized:
-      // remove the amount from the old category's budget and add it to the new one.
       let nextBudgets = state.budgets;
       if (category !== undefined && category !== oldCategory) {
         nextBudgets = state.budgets.map(b => {
@@ -253,6 +235,16 @@ function financeReducer(state: FinanceState, action: Action): FinanceState {
       });
 
       return { ...state, transactions: nextTransactions, budgets: nextBudgets };
+    }
+
+    case 'IMPORT_TRANSACTIONS': {
+      const newTxns = action.payload.filter(
+        newTx => !state.transactions.some(existingTx => existingTx.id === newTx.id)
+      );
+      return { 
+        ...state, 
+        transactions: [...newTxns, ...state.transactions] 
+      };
     }
 
     case 'TRANSFER_FUNDS': {
@@ -305,6 +297,7 @@ interface FinanceContextValue {
   markSettled: (groupId: string, settlementId: string) => void;
   ageSettlements: (groupId: string, days: number) => void;
   updateTransaction: (id: string, updates: { category?: string; note?: string; merchant?: string }) => void;
+  importTransactions: (transactions: Transaction[]) => void;
 }
 
 const FinanceContext = createContext<FinanceContextValue | undefined>(undefined);
@@ -325,9 +318,24 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   const markSettled = (groupId: string, settlementId: string) => dispatch({ type: 'MARK_SETTLED', payload: { groupId, settlementId } });
   const ageSettlements = (groupId: string, days: number) => dispatch({ type: 'AGE_SETTLEMENTS', payload: { groupId, days } });
   const updateTransaction = (id: string, updates: { category?: string; note?: string; merchant?: string }) => dispatch({ type: 'UPDATE_TRANSACTION', payload: { id, ...updates } });
+  const importTransactions = (transactions: Transaction[]) => dispatch({ type: 'IMPORT_TRANSACTIONS', payload: transactions });
 
   return (
-    <FinanceContext.Provider value={{ state, transfer, reset, updateBudget, resetBudgets, addBudget, deleteBudget, createGroup, addGroupExpense, markSettled, ageSettlements, updateTransaction }}>
+    <FinanceContext.Provider value={{ 
+      state, 
+      transfer, 
+      reset, 
+      updateBudget, 
+      resetBudgets, 
+      addBudget, 
+      deleteBudget, 
+      createGroup, 
+      addGroupExpense, 
+      markSettled, 
+      ageSettlements,
+      updateTransaction,
+      importTransactions 
+    }}>
       {children}
     </FinanceContext.Provider>
   );

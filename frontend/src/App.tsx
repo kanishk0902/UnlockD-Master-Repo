@@ -1,6 +1,8 @@
 import { FinanceProvider, useFinance } from './context/FinanceContext';
 import { AccountCard } from './components/AccountCard';
 import { TransferForm } from './components/TransferForm';
+import { StatementImporter } from './components/StatementImporter';
+import { AnalyticsEngine } from './components/AnalyticsEngine';
 import { TransactionHistory } from './components/TransactionHistory';
 import { LiquidityBar } from './components/LiquidityBar';
 import { AuditConsole } from './components/AuditConsole';
@@ -49,6 +51,8 @@ function Dashboard() {
       </section>
 
       <main className="app-main">
+        <StatementImporter />
+        <AnalyticsEngine />
         <TransferForm />
         <TransactionHistory />
       </main>
