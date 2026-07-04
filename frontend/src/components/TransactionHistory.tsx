@@ -83,16 +83,32 @@ export function TransactionHistory() {
     const to = dateTo ? new Date(dateTo + 'T23:59:59').getTime() : null;
 
     let list = transactions.filter(tx => {
+      // 🚀 THE SMART SEARCH INJECTION
       if (q) {
-        const haystack = [
-          tx.note ?? '',
-          merchantOf(tx),
-          accountName(tx.fromAccountId),
-          accountName(tx.toAccountId),
-          tx.category ?? '',
-        ].join(' ').toLowerCase();
-        if (!haystack.includes(q)) return false;
+        let isSmartSearch = false;
+        
+        // Check if the user is typing a math command
+        if (q.startsWith('over ')) {
+          const amountLimit = parseInt(q.replace('over ', ''), 10);
+          if (!isNaN(amountLimit)) {
+            isSmartSearch = true;
+            if (tx.amount <= amountLimit) return false; // Filter out small amounts
+          }
+        }
+        
+        // If it wasn't a math command, do a normal text search
+        if (!isSmartSearch) {
+          const haystack = [
+            tx.note ?? '',
+            merchantOf(tx),
+            accountName(tx.fromAccountId),
+            accountName(tx.toAccountId),
+            tx.category ?? '',
+          ].join(' ').toLowerCase();
+          if (!haystack.includes(q)) return false;
+        }
       }
+
       if (categoryFilter !== '__all__') {
         if (categoryFilter === '__none__' ? !!tx.category : tx.category !== categoryFilter) return false;
       }
@@ -118,7 +134,6 @@ export function TransactionHistory() {
     });
 
     return list;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transactions, query, categoryFilter, accountFilter, dateFrom, dateTo, amountMin, amountMax, sortKey, accounts]);
 
   const hasActiveFilters = query || categoryFilter !== '__all__' || accountFilter !== '__all__' || dateFrom || dateTo || amountMin || amountMax;
@@ -160,7 +175,7 @@ export function TransactionHistory() {
       accountName(tx.fromAccountId),
       accountName(tx.toAccountId),
       tx.category ?? '',
-      (tx.amount / 100).toFixed(2),
+      tx.amount.toFixed(2),
       tx.status,
     ]);
     const csv = [header, ...rows].map(r => r.map(v => csvEscape(String(v))).join(',')).join('\n');
@@ -201,7 +216,7 @@ export function TransactionHistory() {
       <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
         <input
           type="text"
-          placeholder="Search by description or merchant…"
+          placeholder="Search by description or type 'over 1000'..."
           value={query}
           onChange={e => setQuery(e.target.value)}
           style={{ ...inputStyle, flex: 1 }}

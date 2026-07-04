@@ -1,4 +1,6 @@
+import React, { useState } from 'react';
 import { FinanceProvider, useFinance } from './context/FinanceContext';
+import { LanguageProvider, useLanguage } from "./context/LanguageContext";
 import { AccountCard } from './components/AccountCard';
 import { TransferForm } from './components/TransferForm';
 import { StatementImporter } from './components/StatementImporter';
@@ -8,64 +10,107 @@ import { LiquidityBar } from './components/LiquidityBar';
 import { AuditConsole } from './components/AuditConsole';
 import { BudgetTracker } from './components/BudgetTracker';
 import { BillSplitter } from './components/BillSplitter';
+import { LoginScreen } from './components/LoginScreen';
+import { MoneyExhaustionWatch } from './components/MoneyExhaustionWatch';
+import LanguageSwitcher from "./components/LanguageSwitcher";
 import './App.css';
 
 function Dashboard() {
   const { state, reset } = useFinance();
+  const { translate } = useLanguage();
 
-  // 🚀 NEW: Dynamically fetches the current system date for the UI
-  const today = new Date().toLocaleDateString('en-IN', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
+  const [view, setView] = useState<'dashboard' | 'analytics' | 'splitwise' | 'insights'>('dashboard');
+
+  const navItemStyle = (item: string) => ({
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    color: view === item ? '#10b981' : '#4b5563',
+    fontWeight: view === item ? 'bold' : 'normal',
+    fontSize: '14px',
+    borderBottom: view === item ? '2px solid #10b981' : 'none',
+    paddingBottom: '4px',
+    transition: 'all 0.2s ease'
   });
 
   return (
     <div className="app-shell">
       <header className="app-header">
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' }}>
-            <p className="app-header__eyebrow" style={{ margin: 0 }}>Unlock'D · Round 1</p>
-            {/* 🚀 NEW: The Ledger Date Badge */}
-            <span style={{ fontSize: '11px', color: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
-              Ledger Date: {today}
-            </span>
-          </div>
-          <h1 style={{ marginTop: '8px' }}>Transactions</h1>
+          <p className="app-header__eyebrow">Unlock'D · {view.toUpperCase()}</p>
+          <h1>{translate("transactions")}</h1>
+          <p>{translate("liquidityLedger")}</p>
+
+          <nav style={{ display: 'flex', gap: '32px', marginTop: '16px' }}>
+            {(['dashboard', 'analytics', 'splitwise', 'insights'] as const).map((item) => (
+              <button 
+                key={item} 
+                onClick={() => setView(item)} 
+                style={navItemStyle(item)}
+              >
+                {translate(item as any) || item.charAt(0).toUpperCase() + item.slice(1)}
+              </button>
+            ))}
+          </nav>
         </div>
-        <button className="app-header__reset" onClick={reset} type="button">
-          Reset demo data
-        </button>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <LanguageSwitcher />
+          <button className="app-header__reset" onClick={reset}>
+            {translate("resetDemoData")}
+          </button>
+        </div>
       </header>
 
-      <LiquidityBar />
+      <main style={{ minHeight: '60vh', padding: '32px 0' }}>
+        {view === 'dashboard' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+            <LiquidityBar />
+            <section className="accounts">
+              {state.accounts?.map((acc: any) => <AccountCard key={acc.id} account={acc} />)}
+            </section>
+            <TransferForm />
+            <BudgetTracker />
+            <TransactionHistory />
+          </div>
+        )}
 
-      <BudgetTracker />
-      <BillSplitter />
+        {view === 'analytics' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+            <AnalyticsEngine />
+            <TransferForm />
+          </div>
+        )}
 
-      <section className="accounts">
-        {state.accounts.map((acc) => (
-          <AccountCard key={acc.id} account={acc} />
-        ))}
-      </section>
+        {view === 'splitwise' && <BillSplitter />}
 
-      <main className="app-main">
-        <StatementImporter />
-        <AnalyticsEngine />
-        <TransferForm />
-        <TransactionHistory />
+        {view === 'insights' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+            <MoneyExhaustionWatch />
+            <StatementImporter />
+          </div>
+        )}
       </main>
 
-      <AuditConsole />
+      <footer style={{ marginTop: '48px', borderTop: '1px solid #1e293b', paddingTop: '24px' }}>
+        <AuditConsole />
+      </footer>
     </div>
   );
 }
 
 export default function App() {
+  const [isUnlocked, setIsUnlocked] = useState(false);
+
   return (
-    <FinanceProvider>
-      <Dashboard />
-    </FinanceProvider>
+    <LanguageProvider>
+      <FinanceProvider>
+        {!isUnlocked ? (
+          <LoginScreen onUnlock={() => setIsUnlocked(true)} />
+        ) : (
+          <Dashboard />
+        )}
+      </FinanceProvider>
+    </LanguageProvider>
   );
 }

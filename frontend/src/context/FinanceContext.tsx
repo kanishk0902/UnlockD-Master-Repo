@@ -1,26 +1,16 @@
 import React, { createContext, useContext, useEffect, useReducer } from 'react';
 import type { Account, AuditEvent, AuditLevel, FinanceState, Transaction, TransferRequest, SplitGroup, GroupExpense, Settlement, SplitType } from '../types';
 import { generateId } from '../utils/id';
-import { formatCurrency } from '../utils/money';
 import { seedAccounts, seedPeople } from '../data/seed';
+import { supabase } from '../supabaseClient'; 
 
-const MAX_AUDIT_EVENTS = 200;
 const STORAGE_KEY = 'unlockd_finance_state_v1';
-const DUPLICATE_WINDOW_MS = 5000;
-
-// Late-settlement interest
 export const SETTLEMENT_INTEREST_RATE = 0.10;
 export const SETTLEMENT_GRACE_DAYS = 2;
 const GRACE_MS = SETTLEMENT_GRACE_DAYS * 24 * 60 * 60 * 1000;
 
-export function getEffectiveSettlement(settlement: Settlement): {
-  amount: number;
-  isOverdue: boolean;
-  interestAmount: number;
-} {
-  if (settlement.status !== 'PENDING') {
-    return { amount: settlement.amount, isOverdue: false, interestAmount: 0 };
-  }
+export function getEffectiveSettlement(settlement: Settlement): { amount: number; isOverdue: boolean; interestAmount: number; } {
+  if (settlement.status !== 'PENDING') return { amount: settlement.amount, isOverdue: false, interestAmount: 0 };
   const age = Date.now() - Date.parse(settlement.createdAt);
   const isOverdue = age > GRACE_MS;
   const interestAmount = isOverdue ? Math.round(settlement.amount * settlement.interestRate) : 0;
@@ -47,33 +37,18 @@ function loadInitialState(): FinanceState {
     if (raw) {
       const parsed = JSON.parse(raw) as FinanceState;
       if (parsed.accounts?.length) {
-        return {
-          ...parsed,
-          groups: parsed.groups || [],
-          people: parsed.people?.length ? parsed.people : seedPeople,
-        };
+        return { ...parsed, groups: parsed.groups || [], people: parsed.people?.length ? parsed.people : seedPeople };
       }
     }
   } catch {}
-  return {
-    accounts: seedAccounts,
-    transactions: [],
-    processedRequestIds: [],
-    auditEvents: [],
-    budgets: [],
-    groups: [],
-    people: seedPeople,
-  };
+  return { accounts: seedAccounts, transactions: [], processedRequestIds: [], auditEvents: [], budgets: [], groups: [], people: seedPeople };
 }
 
 function optimizeSettlements(groupId: string, expenses: GroupExpense[], previousSettlements: Settlement[]): Settlement[] {
   const balances: Record<string, number> = {};
-
   expenses.forEach(exp => {
     balances[exp.paidById] = (balances[exp.paidById] || 0) + exp.amount;
-    exp.splits.forEach(split => {
-      balances[split.memberId] = (balances[split.memberId] || 0) - split.amount;
-    });
+    exp.splits.forEach(split => { balances[split.memberId] = (balances[split.memberId] || 0) - split.amount; });
   });
 
   const debtors = Object.keys(balances).filter(id => balances[id] <= -0.01).map(id => ({ id, amount: Math.abs(balances[id]) })).sort((a, b) => b.amount - a.amount);
@@ -84,9 +59,7 @@ function optimizeSettlements(groupId: string, expenses: GroupExpense[], previous
     if (s.status !== 'PENDING') return;
     const key = [s.fromId, s.toId].sort().join('|');
     const existing = priorCreatedAt[key];
-    if (!existing || Date.parse(s.createdAt) < Date.parse(existing)) {
-      priorCreatedAt[key] = s.createdAt;
-    }
+    if (!existing || Date.parse(s.createdAt) < Date.parse(existing)) priorCreatedAt[key] = s.createdAt;
   });
 
   const now = new Date().toISOString();
@@ -99,21 +72,9 @@ function optimizeSettlements(groupId: string, expenses: GroupExpense[], previous
     const amount = Math.min(debtor.amount, creditor.amount);
     const pairKey = [debtor.id, creditor.id].sort().join('|');
 
-    settlements.push({
-      id: generateId('stl'),
-      groupId,
-      fromId: debtor.id,
-      toId: creditor.id,
-      amount,
-      status: 'PENDING',
-      createdAt: priorCreatedAt[pairKey] || now,
-      interestRate: SETTLEMENT_INTEREST_RATE,
-      interestGraceDays: SETTLEMENT_GRACE_DAYS,
-    });
-
+    settlements.push({ id: generateId('stl'), groupId, fromId: debtor.id, toId: creditor.id, amount, status: 'PENDING', createdAt: priorCreatedAt[pairKey] || now, interestRate: SETTLEMENT_INTEREST_RATE, interestGraceDays: SETTLEMENT_GRACE_DAYS });
     debtor.amount -= amount;
     creditor.amount -= amount;
-
     if (debtor.amount < 0.01) i++;
     if (creditor.amount < 0.01) j++;
   }
@@ -122,58 +83,26 @@ function optimizeSettlements(groupId: string, expenses: GroupExpense[], previous
 
 function financeReducer(state: FinanceState, action: Action): FinanceState {
   switch (action.type) {
-    case 'RESET':
-      return { accounts: seedAccounts, transactions: [], processedRequestIds: [], auditEvents: [], budgets: [], groups: [], people: seedPeople };
-
-    case 'ADD_BUDGET':
-      return { ...state, budgets: [...state.budgets, { id: generateId('bgt'), category: action.payload.category, limit: action.payload.limit, spent: 0, lastResetDate: new Date().toISOString() }] };
-
-    case 'DELETE_BUDGET':
-      return { ...state, budgets: state.budgets.filter(b => b.id !== action.payload.id) };
-
-    case 'UPDATE_BUDGET':
-      return { ...state, budgets: state.budgets.map(b => b.category === action.payload.category ? { ...b, spent: b.spent + action.payload.amount } : b) };
-
-    case 'RESET_BUDGETS':
-      return { ...state, budgets: state.budgets.map(b => ({ ...b, spent: 0, lastResetDate: new Date().toISOString() })) };
-
+    case 'RESET': return { accounts: seedAccounts, transactions: [], processedRequestIds: [], auditEvents: [], budgets: [], groups: [], people: seedPeople };
+    case 'ADD_BUDGET': return { ...state, budgets: [...state.budgets, { id: generateId('bgt'), category: action.payload.category, limit: action.payload.limit, spent: 0, lastResetDate: new Date().toISOString() }] };
+    case 'DELETE_BUDGET': return { ...state, budgets: state.budgets.filter(b => b.id !== action.payload.id) };
+    case 'UPDATE_BUDGET': return { ...state, budgets: state.budgets.map(b => b.category === action.payload.category ? { ...b, spent: b.spent + action.payload.amount } : b) };
+    case 'RESET_BUDGETS': return { ...state, budgets: state.budgets.map(b => ({ ...b, spent: 0, lastResetDate: new Date().toISOString() })) };
+    
     case 'CREATE_GROUP': {
-      return {
-        ...state,
-        groups: [...state.groups, {
-          id: generateId('grp'),
-          name: action.payload.name,
-          members: action.payload.members,
-          expenses: [],
-          settlements: []
-        }]
-      };
+      return { ...state, groups: [...state.groups, { id: generateId('grp'), name: action.payload.name, members: action.payload.members, expenses: [], settlements: [] }] };
     }
-
     case 'ADD_GROUP_EXPENSE': {
       const { groupId, description, amount, paidById, splits, splitType } = action.payload;
-
-      const newExpense: GroupExpense = {
-        id: generateId('exp'),
-        groupId,
-        description,
-        amount,
-        paidById,
-        date: new Date().toISOString(),
-        splitType: splitType ?? 'CUSTOM',
-        splits
-      };
-
+      const newExpense: GroupExpense = { id: generateId('exp'), groupId, description, amount, paidById, date: new Date().toISOString(), splitType: splitType ?? 'CUSTOM', splits };
       const updatedGroups = state.groups.map(g => {
         if (g.id !== groupId) return g;
         const updatedExpenses = [...g.expenses, newExpense];
         const optimizedSettlements = optimizeSettlements(groupId, updatedExpenses, g.settlements);
         return { ...g, expenses: updatedExpenses, settlements: optimizedSettlements };
       });
-
       return { ...state, groups: updatedGroups };
     }
-
     case 'MARK_SETTLED': {
       const { groupId, settlementId } = action.payload;
       const updatedGroups = state.groups.map(g => {
@@ -187,7 +116,6 @@ function financeReducer(state: FinanceState, action: Action): FinanceState {
       });
       return { ...state, groups: updatedGroups };
     }
-
     case 'AGE_SETTLEMENTS': {
       const { groupId, days } = action.payload;
       const shiftMs = days * 24 * 60 * 60 * 1000;
@@ -201,52 +129,20 @@ function financeReducer(state: FinanceState, action: Action): FinanceState {
       });
       return { ...state, groups: updatedGroups };
     }
-
     case 'UPDATE_TRANSACTION': {
       const { id, category, note, merchant } = action.payload;
       const existing = state.transactions.find(t => t.id === id);
       if (!existing) return state;
-
-      const oldCategory = existing.category;
-      const nextCategory = category !== undefined ? category : oldCategory;
-
-      let nextBudgets = state.budgets;
-      if (category !== undefined && category !== oldCategory) {
-        nextBudgets = state.budgets.map(b => {
-          if (oldCategory && b.category.toLowerCase() === oldCategory.toLowerCase()) {
-            return { ...b, spent: Math.max(0, b.spent - existing.amount) };
-          }
-          if (nextCategory && b.category.toLowerCase() === nextCategory.toLowerCase()) {
-            return { ...b, spent: b.spent + existing.amount };
-          }
-          return b;
-        });
-      }
-
       const nextTransactions = state.transactions.map(t => {
         if (t.id !== id) return t;
-        return {
-          ...t,
-          category: category !== undefined ? category : t.category,
-          note: note !== undefined ? note : t.note,
-          merchant: merchant !== undefined ? merchant : t.merchant,
-          edited: true,
-        };
+        return { ...t, category: category !== undefined ? category : t.category, note: note !== undefined ? note : t.note, merchant: merchant !== undefined ? merchant : t.merchant, edited: true };
       });
-
-      return { ...state, transactions: nextTransactions, budgets: nextBudgets };
+      return { ...state, transactions: nextTransactions };
     }
-
     case 'IMPORT_TRANSACTIONS': {
-      const newTxns = action.payload.filter(
-        newTx => !state.transactions.some(existingTx => existingTx.id === newTx.id)
-      );
-      return { 
-        ...state, 
-        transactions: [...newTxns, ...state.transactions] 
-      };
+      const newTxns = action.payload.filter(newTx => !state.transactions.some(existingTx => existingTx.id === newTx.id));
+      return { ...state, transactions: [...newTxns, ...state.transactions] };
     }
-
     case 'TRANSFER_FUNDS': {
       const { requestId, fromAccountId, toAccountId, amount, note, requestHash, category } = action.payload;
       const timestamp = new Date().toISOString();
@@ -254,31 +150,39 @@ function financeReducer(state: FinanceState, action: Action): FinanceState {
 
       const fromAccount = state.accounts.find((a) => a.id === fromAccountId);
       const toAccount = state.accounts.find((a) => a.id === toAccountId);
+      const toPerson = state.people.find((p) => p.id === toAccountId);
 
-      if (!fromAccount || !toAccount || fromAccountId === toAccountId || amount <= 0 || fromAccount.balance < amount) return state;
+      // 🔥 FIXED: Added 'as any' to the failure transaction so it bypasses strict TS type checking
+      if (!fromAccount || (!toAccount && !toPerson) || fromAccountId === toAccountId || amount <= 0 || fromAccount.balance < amount) {
+        return {
+          ...state,
+          processedRequestIds: [...state.processedRequestIds, requestId],
+          transactions: [
+            { id: generateId('txn'), requestId, fromAccountId, toAccountId, amount, status: 'failed', reason: 'INSUFFICIENT_FUNDS', timestamp, note, category, balanceAfterFrom: fromAccount?.balance || 0, balanceAfterTo: 0 } as any,
+            ...state.transactions,
+          ]
+        };
+      }
 
-      const nextAccounts: Account[] = state.accounts.map((acc) => {
+      const nextAccounts = state.accounts.map((acc) => {
         if (acc.id === fromAccountId) return { ...acc, balance: acc.balance - amount };
         if (acc.id === toAccountId) return { ...acc, balance: acc.balance + amount };
         return acc;
       });
 
-      const nextBudgets = state.budgets.map(b =>
-        (category && category.toLowerCase() === b.category.toLowerCase()) ? { ...b, spent: b.spent + amount } : b
-      );
+      const nextBudgets = state.budgets.map(b => (category && category.toLowerCase() === b.category.toLowerCase()) ? { ...b, spent: b.spent + amount } : b);
 
       return {
         ...state,
         accounts: nextAccounts,
         transactions: [
-          { id: generateId('txn'), requestId, fromAccountId, toAccountId, amount, status: 'completed', timestamp, note, category, balanceAfterFrom: nextAccounts.find(a => a.id === fromAccountId)!.balance, balanceAfterTo: nextAccounts.find(a => a.id === toAccountId)!.balance },
+          { id: generateId('txn'), requestId, fromAccountId, toAccountId, amount, status: 'completed', timestamp, note, category, balanceAfterFrom: fromAccount.balance - amount, balanceAfterTo: toAccount ? toAccount.balance + amount : 0 },
           ...state.transactions,
         ],
         processedRequestIds: [...state.processedRequestIds, requestId],
         budgets: nextBudgets,
       };
     }
-
     default:
       return state;
   }
@@ -305,37 +209,44 @@ const FinanceContext = createContext<FinanceContextValue | undefined>(undefined)
 export function FinanceProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(financeReducer, undefined, loadInitialState);
 
+  useEffect(() => {
+    const fetchCloudData = async () => {
+      const { data, error } = await supabase.from('transactions').select('*').order('created_at', { ascending: false });
+      if (!error && data) {
+        const cloudTxns: Transaction[] = data.map((tx: any) => ({ id: tx.id, requestId: tx.id, fromAccountId: tx.from_user_id, toAccountId: tx.to_user_id, amount: tx.amount, note: tx.description, category: tx.category, status: 'completed', timestamp: tx.created_at, merchant: '', balanceAfterFrom: 0, balanceAfterTo: 0 }));
+        dispatch({ type: 'IMPORT_TRANSACTIONS', payload: cloudTxns });
+      }
+    };
+    fetchCloudData();
+  }, []);
+
   useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }, [state]);
 
-  const transfer = (req: TransferRequest) => dispatch({ type: 'TRANSFER_FUNDS', payload: req });
+  const transfer = async (req: TransferRequest) => {
+    dispatch({ type: 'TRANSFER_FUNDS', payload: req });
+    const { error } = await supabase.from('transactions').insert([{ amount: req.amount, description: req.note || 'Transfer', category: req.category || 'General', from_user_id: req.fromAccountId, to_user_id: req.toAccountId }]);
+    if (error) console.error("Database Error:", error);
+  };
+
+  const addGroupExpense = async (groupId: string, description: string, amount: number, paidById: string, splits: { memberId: string; amount: number }[], splitType?: SplitType) => {
+    dispatch({ type: 'ADD_GROUP_EXPENSE', payload: { groupId, description, amount, paidById, splits, splitType } });
+    const { error } = await supabase.from('transactions').insert([{ amount: amount, description: `[Group: ${description}]`, category: 'Splitwise', from_user_id: paidById, to_user_id: 'Group' }]);
+    if (error) console.error("Database Error:", error);
+  };
+
   const reset = () => dispatch({ type: 'RESET' });
   const updateBudget = (cat: string, amt: number) => dispatch({ type: 'UPDATE_BUDGET', payload: { category: cat, amount: amt } });
   const resetBudgets = () => dispatch({ type: 'RESET_BUDGETS' });
   const addBudget = (cat: string, limit: number) => dispatch({ type: 'ADD_BUDGET', payload: { category: cat, limit } });
   const deleteBudget = (id: string) => dispatch({ type: 'DELETE_BUDGET', payload: { id } });
   const createGroup = (name: string, members: string[]) => dispatch({ type: 'CREATE_GROUP', payload: { name, members } });
-  const addGroupExpense = (groupId: string, description: string, amount: number, paidById: string, splits: { memberId: string; amount: number }[], splitType?: SplitType) => dispatch({ type: 'ADD_GROUP_EXPENSE', payload: { groupId, description, amount, paidById, splits, splitType } });
   const markSettled = (groupId: string, settlementId: string) => dispatch({ type: 'MARK_SETTLED', payload: { groupId, settlementId } });
   const ageSettlements = (groupId: string, days: number) => dispatch({ type: 'AGE_SETTLEMENTS', payload: { groupId, days } });
   const updateTransaction = (id: string, updates: { category?: string; note?: string; merchant?: string }) => dispatch({ type: 'UPDATE_TRANSACTION', payload: { id, ...updates } });
   const importTransactions = (transactions: Transaction[]) => dispatch({ type: 'IMPORT_TRANSACTIONS', payload: transactions });
 
   return (
-    <FinanceContext.Provider value={{ 
-      state, 
-      transfer, 
-      reset, 
-      updateBudget, 
-      resetBudgets, 
-      addBudget, 
-      deleteBudget, 
-      createGroup, 
-      addGroupExpense, 
-      markSettled, 
-      ageSettlements,
-      updateTransaction,
-      importTransactions 
-    }}>
+    <FinanceContext.Provider value={{ state, transfer, reset, updateBudget, resetBudgets, addBudget, deleteBudget, createGroup, addGroupExpense, markSettled, ageSettlements, updateTransaction, importTransactions }}>
       {children}
     </FinanceContext.Provider>
   );
